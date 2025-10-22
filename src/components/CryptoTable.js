@@ -96,9 +96,9 @@ const RefreshButton = styled.button`
 const cryptoNames = {
   'BTCUSDT': 'Bitcoin',
   'ETHUSDT': 'Ethereum',
+  'DOGEUSDT': 'Dogecoin',
   'BNBUSDT': 'Binance Coin',
   'ADAUSDT': 'Cardano',
-  'DOGEUSDT': 'Dogecoin',
   'XRPUSDT': 'Ripple',
   'SOLUSDT': 'Solana',
   'DOTUSDT': 'Polkadot',
