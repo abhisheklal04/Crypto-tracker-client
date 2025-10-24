@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styled from 'styled-components';
 import { BiUpArrowAlt, BiDownArrowAlt } from 'react-icons/bi';
 import axios from 'axios';
@@ -93,31 +93,50 @@ const RefreshButton = styled.button`
   }
 `;
 
-const cryptoNames = {
-  'BTCUSDT': 'Bitcoin',
-  'ETHUSDT': 'Ethereum',
-  'DOGEUSDT': 'Dogecoin',
-  'BNBUSDT': 'Binance Coin',
-  'ADAUSDT': 'Cardano',
-  'XRPUSDT': 'Ripple',
-  'SOLUSDT': 'Solana',
-  'DOTUSDT': 'Polkadot',
-  'MATICUSDT': 'Polygon',
-  'AVAXUSDT': 'Avalanche'
-};
-
-function CryptoTable() {
+// Custom hook for all crypto data fetching
+const useCryptoData = () => {
+  const [cryptoDetails, setCryptoDetails] = useState({});
   const [prices, setPrices] = useState([]);
   const [previousPrices, setPreviousPrices] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({});
+  const cryptoDetailsFetched = useRef(false);
+  const priceUpdateInterval = useRef(null);
 
-  const fetchPrices = async () => {
+  // Function to fetch crypto details
+  const fetchCryptoDetails = useCallback(async () => {
+    if (cryptoDetailsFetched.current) return;
+    
+    console.log('Fetching crypto details...');
+    try {
+      const response = await axios.get('http://localhost:3001/api/crypto-details');
+      const details = response.data.cryptocurrencies.reduce((acc, crypto) => {
+        acc[crypto.tradingPair] = crypto;
+        return acc;
+      }, {});
+      setCryptoDetails(details);
+      cryptoDetailsFetched.current = true;
+      console.log('Crypto details fetched successfully');
+      return details; // Return the details for immediate use
+    } catch (err) {
+      console.error('Failed to fetch crypto details:', err);
+      setError('Failed to fetch cryptocurrency details');
+      setLoading(false);
+      return null;
+    }
+  }, []);
+
+  // Fetch prices and stats
+  const fetchPrices = useCallback(async (details) => {
+    const cryptoToUse = details || cryptoDetails;
+    if (!Object.keys(cryptoToUse).length) return;
+
+    console.log('Fetching prices and stats...');
     try {
       const [pricesResponse, ...statsResponses] = await Promise.all([
         axios.get('http://localhost:3001/api/prices'),
-        ...Object.keys(cryptoNames).map(symbol => 
+        ...Object.keys(cryptoToUse).map(symbol => 
           axios.get(`http://localhost:3001/api/stats/${symbol.replace('USDT', '')}`)
         )
       ]);
@@ -138,17 +157,71 @@ function CryptoTable() {
       setStats(newStats);
       setLoading(false);
       setError(null);
+      console.log('Prices and stats fetched successfully');
     } catch (err) {
+      console.error('Failed to fetch prices and stats:', err);
       setError('Failed to fetch crypto data');
       setLoading(false);
     }
-  };
+  }, [cryptoDetails, prices]);
 
+  // Initial setup effect
   useEffect(() => {
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    const initializeData = async () => {
+      console.log('Initializing data...');
+      const details = await fetchCryptoDetails();
+      if (details) {
+        await fetchPrices(details);
+        // Set up interval only after initial fetch is successful
+        priceUpdateInterval.current = setInterval(() => fetchPrices(details), 60000);
+        console.log('Price update interval set up');
+      }
+    };
+
+    initializeData();
+
+    // Cleanup interval on unmount
+    return () => {
+      if (priceUpdateInterval.current) {
+        clearInterval(priceUpdateInterval.current);
+      }
+    };
+  }, [fetchCryptoDetails, fetchPrices]);
+
+  // Create a refresh function that ensures we have crypto details
+  const refreshPrices = useCallback(async () => {
+    console.log('Manually refreshing prices...');
+    if (!Object.keys(cryptoDetails).length) {
+      const details = await fetchCryptoDetails();
+      if (details) {
+        await fetchPrices(details);
+      }
+    } else {
+      await fetchPrices(cryptoDetails);
+    }
+  }, [cryptoDetails, fetchCryptoDetails, fetchPrices]);
+
+  return {
+    cryptoDetails,
+    prices,
+    previousPrices,
+    loading,
+    error,
+    stats,
+    refreshPrices  // Return the new refresh function instead
+  };
+};
+
+function CryptoTable() {
+  const {
+    cryptoDetails,
+    prices,
+    previousPrices,
+    loading,
+    error,
+    stats,
+    refreshPrices
+  } = useCryptoData();
 
   if (loading) {
     return (
@@ -168,7 +241,7 @@ function CryptoTable() {
 
   return (
     <TableContainer>
-      <RefreshButton onClick={fetchPrices}>Refresh Prices</RefreshButton>
+      <RefreshButton onClick={refreshPrices}>Refresh Prices</RefreshButton>
       <Table>
         <thead>
           <tr>
@@ -183,16 +256,15 @@ function CryptoTable() {
         <tbody>
           {prices.map(({ symbol, price }) => {
             const prevPrice = previousPrices[symbol] || price;
-            const priceChange = price - prevPrice;
-            const isPositive = priceChange >= 0;
+            const cryptoDetail = cryptoDetails[symbol] || {};
             const statsData = stats[symbol] || {};
 
             return (
               <Tr key={symbol}>
                 <Td>
                   <CryptoName>
-                    {cryptoNames[symbol]}
-                    <CryptoSymbol>{symbol.replace('USDT', '')}</CryptoSymbol>
+                    {cryptoDetail.name || symbol}
+                    <CryptoSymbol>{cryptoDetail.symbol || symbol.replace('USDT', '')}</CryptoSymbol>
                   </CryptoName>
                 </Td>
                 <Td>${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Td>
