@@ -21,13 +21,13 @@ const Title = styled.h1`
   text-align: center;
 `;
 
-function App() {
+const App: React.FC = () => {
   return (
     <AppContainer>
       <Title>Crypto Price Tracker</Title>
       <CryptoTable />
     </AppContainer>
   );
-}
+};
 
 export default App;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styled from 'styled-components';
 import { BiUpArrowAlt, BiDownArrowAlt } from 'react-icons/bi';
 import axios from 'axios';
+import { CryptoDetails, Price, Stats, UseCryptoData } from '../types/crypto';
 
 const TableContainer = styled.div`
   background: rgba(255, 255, 255, 0.1);
@@ -39,7 +40,7 @@ const Tr = styled.tr`
   }
 `;
 
-const PriceChange = styled.div`
+const PriceChange = styled.div<{ isPositive: boolean }>`
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -94,15 +95,15 @@ const RefreshButton = styled.button`
 `;
 
 // Custom hook for all crypto data fetching
-const useCryptoData = () => {
-  const [cryptoDetails, setCryptoDetails] = useState({});
-  const [prices, setPrices] = useState([]);
-  const [previousPrices, setPreviousPrices] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState({});
-  const cryptoDetailsFetched = useRef(false);
-  const priceUpdateInterval = useRef(null);
+const useCryptoData = (): UseCryptoData => {
+  const [cryptoDetails, setCryptoDetails] = useState<Record<string, CryptoDetails>>({});
+  const [prices, setPrices] = useState<Price[]>([]);
+  const [previousPrices, setPreviousPrices] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<Record<string, Stats>>({});
+  const cryptoDetailsFetched = useRef<boolean>(false);
+  const priceUpdateInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Function to fetch crypto details
   const fetchCryptoDetails = useCallback(async () => {
@@ -110,15 +111,15 @@ const useCryptoData = () => {
     
     console.log('Fetching crypto details...');
     try {
-      const response = await axios.get('http://localhost:3001/api/crypto-details');
-      const details = response.data.cryptocurrencies.reduce((acc, crypto) => {
+      const response = await axios.get<{ cryptocurrencies: CryptoDetails[] }>('http://localhost:3001/api/crypto-details');
+      const details = response.data.cryptocurrencies.reduce<Record<string, CryptoDetails>>((acc, crypto) => {
         acc[crypto.tradingPair] = crypto;
         return acc;
       }, {});
       setCryptoDetails(details);
       cryptoDetailsFetched.current = true;
       console.log('Crypto details fetched successfully');
-      return details; // Return the details for immediate use
+      return details;
     } catch (err) {
       console.error('Failed to fetch crypto details:', err);
       setError('Failed to fetch cryptocurrency details');
@@ -128,27 +129,27 @@ const useCryptoData = () => {
   }, []);
 
   // Fetch prices and stats
-  const fetchPrices = useCallback(async (details) => {
+  const fetchPrices = useCallback(async (details: Record<string, CryptoDetails>) => {
     const cryptoToUse = details || cryptoDetails;
     if (!Object.keys(cryptoToUse).length) return;
 
     console.log('Fetching prices and stats...');
     try {
       const [pricesResponse, ...statsResponses] = await Promise.all([
-        axios.get('http://localhost:3001/api/prices'),
+        axios.get<{ prices: Price[] }>('http://localhost:3001/api/prices'),
         ...Object.keys(cryptoToUse).map(symbol => 
-          axios.get(`http://localhost:3001/api/stats/${symbol.replace('USDT', '')}`)
+          axios.get<Stats>(`http://localhost:3001/api/stats/${symbol.replace('USDT', '')}`)
         )
       ]);
 
-      const newStats = {};
+      const newStats: Record<string, Stats> = {};
       statsResponses.forEach(response => {
         if (response.data && response.data.symbol) {
           newStats[response.data.symbol] = response.data;
         }
       });
 
-      setPreviousPrices(prices.reduce((acc, curr) => {
+      setPreviousPrices(prices.reduce<Record<string, number>>((acc, curr) => {
         acc[curr.symbol] = curr.price;
         return acc;
       }, {}));
@@ -208,11 +209,11 @@ const useCryptoData = () => {
     loading,
     error,
     stats,
-    refreshPrices  // Return the new refresh function instead
+    refreshPrices
   };
 };
 
-function CryptoTable() {
+const CryptoTable: React.FC = () => {
   const {
     cryptoDetails,
     prices,
@@ -255,7 +256,6 @@ function CryptoTable() {
         </thead>
         <tbody>
           {prices.map(({ symbol, price }) => {
-            const prevPrice = previousPrices[symbol] || price;
             const cryptoDetail = cryptoDetails[symbol] || {};
             const statsData = stats[symbol] || {};
 
@@ -284,6 +284,6 @@ function CryptoTable() {
       </Table>
     </TableContainer>
   );
-}
+};
 
 export default CryptoTable;
